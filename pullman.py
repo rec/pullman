@@ -1,17 +1,17 @@
 #!/bin/env python3
 
-import dataclasses as dc
 import argparse
+import dataclasses as dc
+import json
+import os
+import sys
+import webbrowser
 from argparse import Namespace
 from functools import cache, cached_property
 from operator import attrgetter
 from pathlib import Path
+from subprocess import CalledProcessError, run
 from typing import Any, Optional, Sequence
-import json
-import os
-from subprocess import run, CalledProcessError
-import sys
-import webbrowser
 
 _COMMANDS = {
     "commit_url": "Print git ref id URL for a pull request",
