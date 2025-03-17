@@ -13,8 +13,19 @@ from pathlib import Path
 from subprocess import CalledProcessError, run
 from typing import Any, Optional, Sequence
 
+try:
+    import bs4
+except ImportError:
+    bs4 = None
+try:
+    import requests
+except ImportError:
+    requests = None
+
+
 _COMMANDS = {
     "commit_url": "Print git ref id URL for a pull request",
+    "errors": "Download all the errors for a pull request",
     "hud_url": "HUD URL for a pull request",
     "list": "List all pull requests",
     "ref": "Print git ref id of a pull request",
@@ -180,6 +191,8 @@ class PullRequests:
 
         if self.args.command == "list":
             self._list()
+        elif self.args.command == "errors":
+            self._errors()
         else:
             value = getattr(self._matching_pull(), self.args.command)
             print(value)
@@ -238,6 +251,12 @@ class PullRequests:
         if pulls := [p for p in self.pulls[self.user] if self.commit in p.subject]:
             return pulls[-1]
         raise PullError("Can't find any matches")
+
+    def _errors(self) -> None:
+        if bad := ["bs4"] * (bs4 is None) + ["requests"] * (requests is None):
+            cmd = f"{sys.executable} -m pip install {' '.join(bad)}"
+            msg = f"To use `pullman error`, install {', '.join(bad)} with\n\n    {cmd}"
+            raise PullError(msg)
 
     @cached_property
     def commit(self) -> str:
