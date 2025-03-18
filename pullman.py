@@ -412,7 +412,20 @@ SECONDS_TO_WAIT = 0
 HREF_PREFIX = "/pytorch/pytorch/actions/runs/"
 
 
-def get_run_ids(pull_id):
+def run_error_command(pull_id, seconds, sort=True):
+    run_ids = _get_run_ids(pull_id)
+    last_cmd = ''
+    commands = _failed_test_commands(run_ids, seconds)
+    if sort:
+        commands = sorted(commands)
+
+    for cmd, job_id in scommands:
+        if cmd != last_cmd:
+            print(f"{cmd}  # {job_id}")
+            last_cmd = cmd
+
+
+def _get_run_ids(pull_id):
     assert pull_id.isnumeric()
     text = requests.get(f"{_PULL_PREFIX}{pull_id}/checks").text
     soup = bs4.BeautifulSoup(text, "html.parser")
@@ -427,18 +440,18 @@ def get_run_ids(pull_id):
                     break
 
 
-def failed_test_commands(run_ids, seconds):
+def _failed_test_commands(run_ids, seconds):
     for segment, run_id in run_ids:
-        for job in get_failures(segment, run_id, seconds):
-            command = get_command(job["id"])
+        for job in _get_failures(segment, run_id, seconds):
+            command = _get_command(job["id"])
             if command:
                 yield command, job["id"]
 
 
-def get_failures(segment, run_id, seconds):
+def _get_failures(segment, run_id, seconds):
     while True:
         print(f"Loading jobs for {run_id}, segment={segment}...", file=sys.stderr)
-        json = api_get(f"actions/runs/{run_id}/jobs?per_page=100").json()
+        json = _api_get(f"actions/runs/{run_id}/jobs?per_page=100").json()
         try:
             jobs = json["jobs"]
         except KeyError:
@@ -456,12 +469,12 @@ def get_failures(segment, run_id, seconds):
         time.sleep(seconds)
 
     failed = [i for i in jobs if i[CONCLUSION] == FAILURE]
-    print(f"run_id={run_id}, jobs={len(jobs)}, failed={len(failed)}", file=sys.stderr)
+    print(f"{run_id=}, {len(jobs)=}, {len(failed)=}", file=sys.stderr)
     return failed
 
 
-def get_command(job_id):
-    lines = api_get(f"actions/jobs/{job_id}/logs").text.splitlines()
+def _get_command(job_id):
+    lines = _api_get(f"actions/jobs/{job_id}/logs").text.splitlines()
     command_lines = (i for i, li in enumerate(lines) if COMMAND in li)
     cmd_index = next(command_lines, -1)
     if cmd_index == -1:
@@ -474,17 +487,8 @@ def get_command(job_id):
     return " ".join(words)
 
 
-def api_get(path):
+def _api_get(path):
     return requests.get(f"{API_ROOT}/{path}", headers=HEADERS)
-
-
-def run_error_command(pull_id, seconds):
-    run_ids = get_run_ids(pull_id)
-    last_cmd = ''
-    for cmd, job_id in sorted(failed_test_commands(run_ids, seconds)):
-        if cmd != last_cmd:
-            print(f"{cmd}  # {job_id}")
-            last_cmd = cmd
 
 
 if __name__ == '__main__':
