@@ -4,6 +4,7 @@ import argparse
 import dataclasses as dc
 import json
 import os
+import re
 import sys
 import webbrowser
 from argparse import Namespace
@@ -23,6 +24,19 @@ except ImportError:
     requests = None
 
 
+"""
+TODO:
+
+errors customization
+  * output file name
+  * introducer ("set -e")
+  * sort (later) or no-sort (immediate)
+  * replace `requests` by `curl`
+
+* Handle closed pull requests not in a ghstack branch better
+
+"""
+
 _COMMANDS = {
     "commit_url": "Print git ref id URL for a pull request",
     "errors": "Download all the errors for a pull request",
@@ -34,6 +48,9 @@ _COMMANDS = {
 }
 TOKEN_NAMES = "PULL_MANAGER_GIT_TOKEN", "GIT_TOKEN"
 GIT_TOKEN = next((token for n in TOKEN_NAMES if (token := os.environ.get(n))), None)
+
+API_ROOT = "https://api.github.com/repos/pytorch/pytorch"
+
 _PULL_PREFIX = "https://github.com/pytorch/pytorch/pull/"
 _GHSTACK_SOURCE = "ghstack-source-id:"
 _HUD_PREFIX = "https://hud.pytorch.org/pr/"
@@ -43,14 +60,6 @@ _COMMIT_PREFIX = "https://github.com/pytorch/pytorch/commit/"
 
 FIELDS = "is_open", "pull_message", "pull_number", "ref"
 DEBUG = not True
-
-"""
-TODO:
-
-* bring in "errors" from elsewhere
-* Handle closed pull requests not in a ghstack branch better
-
-"""
 
 
 class PullError(ValueError):
@@ -255,8 +264,10 @@ class PullRequests:
     def _errors(self) -> None:
         if bad := ["bs4"] * (bs4 is None) + ["requests"] * (requests is None):
             cmd = f"{sys.executable} -m pip install {' '.join(bad)}"
-            msg = f"To use `pullman error`, install {', '.join(bad)} with\n\n    {cmd}"
+            msg = f"To use `pullman errors`, install {', '.join(bad)} with\n\n    {cmd}"
             raise PullError(msg)
+        pull = self._matching_pull()
+        run_error_command(pull.pull_number, int(self.args.seconds))
 
     @cached_property
     def commit(self) -> str:
@@ -307,7 +318,7 @@ def _curl_command() -> str:
         '-H "Accept: application/vnd.github+json" '
         '-H "X-GitHub-Api-Version: 2022-11-28"'
     )
-    url = "https://api.github.com/repos/pytorch/pytorch/pulls"
+    url = f"{APT_ROOT}/pulls"
     if GIT_TOKEN:
         auth = f'-H "Authorization: Bearer {GIT_TOKEN}"'
     else:
@@ -354,8 +365,16 @@ def parse(argv):
         help = "Rewrite cache"
         p.add_argument("--rewrite-cache", "-w", action="store_true")
 
-        help = "The github user name"
-        p.add_argument("--user", "-u", default=None, help=help)
+        if name == "errors":
+            help = "Seconds to wait, 0 means none"
+            p.add_argument("--seconds", "-s", default=0, type=int, help=help)
+
+            help = "Add path to current Python"
+            p.add_argument("--python", "-p", default=0, type=int, help=help)
+
+        else:
+            help = "The github user name"
+            p.add_argument("--user", "-u", default=None, help=help)
 
         if name == "list":
             help = "A term to match in git subjects"
@@ -387,6 +406,101 @@ def parse(argv):
             args = "list", *args
 
     return parser.parse_args(args)
+
+
+# from failed_test_commands.py
+
+HEADERS = {
+    "Accept": "application/vnd.github+json",
+    "Authorization": f"Bearer {GIT_TOKEN}",
+    "X-GitHub-Api-Version": "2022-11-28",
+}
+
+MATCH_PYTHON_COMMAND_RE = re.compile(r"([A-Z_]+=.*)|python")
+
+FAILURE = "failure"
+CONCLUSION = "conclusion"
+COMMAND = "To execute this test, run the following from the base repo dir"
+SECONDS_TO_WAIT = 0
+HREF_PREFIX = "/pytorch/pytorch/actions/runs/"
+
+
+def get_run_ids(pull_id):
+    try:
+        pull_id = next(i for i in pull_id.split("/") if i.isnumeric())
+    except Exception:
+        sys.exit(f"Cannot get run id from {pull_id}")
+    text = requests.get(f"https://github.com/pytorch/pytorch/pull/{pull_id}/checks").text
+    soup = bs4.BeautifulSoup(text, "html.parser")
+    links = (i for i in soup.find_all("a", href=True) if i.text)
+    for a in links:
+        prefix, _, href = a["href"].partition(HREF_PREFIX)
+        if not prefix and href.isnumeric():
+            for span in a.find_all("span"):
+                span = span.text.strip()
+                if span in ('inductor', 'pull', 'trunk'):
+                    yield span, href
+                    break
+
+
+def failed_test_commands(run_ids, seconds):
+    for segment, run_id in run_ids:
+        for job in get_failures(segment, run_id, seconds):
+            command = get_command(job["id"])
+            if command:
+                yield command, job["id"]
+
+
+def get_failures(segment, run_id, seconds):
+    while True:
+        print(f"Loading jobs for {run_id}, segment={segment}...", file=sys.stderr)
+        json = api_get(f"actions/runs/{run_id}/jobs?per_page=100").json()
+        try:
+            jobs = json["jobs"]
+        except KeyError:
+            print(json, file=sys.stderr)
+            sys.exit(1)
+
+        not_finished = sum(not j["conclusion"] for j in jobs)
+        if not_finished:
+            msg = f"{not_finished} job{'s' * (not_finished != 1)} not finished"
+            print(msg, file=sys.stderr)
+
+        if not (seconds and not_finished):
+            break
+        print("Waiting for", seconds, "seconds", file=sys.stderr)
+        time.sleep(seconds)
+
+    failed = [i for i in jobs if i[CONCLUSION] == FAILURE]
+    print(f"run_id={run_id}, jobs={len(jobs)}, failed={len(failed)}", file=sys.stderr)
+    return failed
+
+
+def get_command(job_id):
+    lines = api_get(f"actions/jobs/{job_id}/logs").text.splitlines()
+    command_lines = (i for i, li in enumerate(lines) if COMMAND in li)
+    cmd_index = next(command_lines, -1)
+    if cmd_index == -1:
+        return ""
+
+    words = lines[cmd_index + 1].split()
+    while words and not MATCH_PYTHON_COMMAND_RE.match(words[0]):
+        words.pop(0)
+
+    return " ".join(words)
+
+
+def api_get(path):
+    return requests.get(f"{API_ROOT}/{path}", headers=HEADERS)
+
+
+def run_error_command(pull_id, seconds):
+    run_ids = get_run_ids(pull_id)
+    last_cmd = ''
+    for cmd, job_id in sorted(failed_test_commands(run_ids, seconds)):
+        if cmd != last_cmd:
+            print(f"{cmd}  # {job_id}")
+            last_cmd = cmd
 
 
 if __name__ == '__main__':
