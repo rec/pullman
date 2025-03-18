@@ -5,9 +5,11 @@ import dataclasses as dc
 import json
 import os
 import re
+import stat
 import sys
 import webbrowser
 from argparse import Namespace
+from contextlib import nullcontext
 from functools import cache, cached_property
 from operator import attrgetter
 from pathlib import Path
@@ -253,8 +255,21 @@ class PullRequests:
             cmd = f"{sys.executable} -m pip install {' '.join(bad)}"
             msg = f"To use `pullman errors`, install {', '.join(bad)} with\n\n    {cmd}"
             raise PullError(msg)
+
         pull = self._matching_pull()
-        run_error_command(pull.pull_number, int(self.args.seconds))
+        if filename := self.args.output or (self.args.output_default and "errors.sh"):
+            context = file = open(filename, "w")
+        else:
+            context, file = nullcontext(), sys.stdout
+
+        with context:
+            if filename:
+                print("#!/bin/bash\n", file=file)
+                print("set -e\n", file=file)
+            run_error_command(pull.pull_number, self.args.time, file, self.args.sort)
+        if filename:
+            st = os.stat(filename)
+            os.chmod(filename, st.st_mode | stat.S_IEXEC)
 
     @cached_property
     def commit(self) -> str:
@@ -354,10 +369,22 @@ def parse(argv):
 
         if name == "errors":
             help = "Seconds to wait, 0 means none"
-            p.add_argument("--seconds", "-s", default=0, type=int, help=help)
+            p.add_argument("--time", "-t", default=0, type=int, help=help)
+
+            help = "Add path to some Python"
+            p.add_argument("--python", "-p", default="", type=str, help=help)
 
             help = "Add path to current Python"
-            p.add_argument("--python", "-p", default=0, type=int, help=help)
+            p.add_argument("--python-default", "-P", action="store_true", help=help)
+
+            help = "Write to the default file, errors.sh"
+            p.add_argument("--output", "-o", default="", type=str, help=help)
+
+            help = "Write to the default file, errors.sh"
+            p.add_argument("--output-default", "-O", action="store_true", help=help)
+
+            help = "Sort errors alphabetically"
+            p.add_argument("--sort", "-s", action="store_true", help=help)
 
         else:
             help = "The github user name"
@@ -412,16 +439,16 @@ SECONDS_TO_WAIT = 0
 HREF_PREFIX = "/pytorch/pytorch/actions/runs/"
 
 
-def run_error_command(pull_id, seconds, sort=True):
+def run_error_command(pull_id, seconds, file, sort=True):
     run_ids = _get_run_ids(pull_id)
     last_cmd = ''
     commands = _failed_test_commands(run_ids, seconds)
     if sort:
         commands = sorted(commands)
 
-    for cmd, job_id in scommands:
+    for cmd, job_id in commands:
         if cmd != last_cmd:
-            print(f"{cmd}  # {job_id}")
+            print(f"{cmd}  # {job_id}", file=file)
             last_cmd = cmd
 
 
