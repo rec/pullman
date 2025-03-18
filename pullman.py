@@ -24,19 +24,6 @@ except ImportError:
     requests = None
 
 
-"""
-TODO:
-
-errors customization
-  * output file name
-  * introducer ("set -e")
-  * sort (later) or no-sort (immediate)
-  * replace `requests` by `curl`
-
-* Handle closed pull requests not in a ghstack branch better
-
-"""
-
 _COMMANDS = {
     "commit_url": "Print git ref id URL for a pull request",
     "errors": "Download all the errors for a pull request",
@@ -426,11 +413,8 @@ HREF_PREFIX = "/pytorch/pytorch/actions/runs/"
 
 
 def get_run_ids(pull_id):
-    try:
-        pull_id = next(i for i in pull_id.split("/") if i.isnumeric())
-    except Exception:
-        sys.exit(f"Cannot get run id from {pull_id}")
-    text = requests.get(f"https://github.com/pytorch/pytorch/pull/{pull_id}/checks").text
+    assert pull_id.isnumeric()
+    text = requests.get(f"{_PULL_PREFIX}{pull_id}/checks").text
     soup = bs4.BeautifulSoup(text, "html.parser")
     links = (i for i in soup.find_all("a", href=True) if i.text)
     for a in links:
