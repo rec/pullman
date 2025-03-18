@@ -264,9 +264,13 @@ class PullRequests:
 
         with context:
             if filename:
-                print("#!/bin/bash\n", file=file)
-                print("set -e\n", file=file)
+                print(f"#!/bin/bash\n\n{self.args.before}\n", file=file)
+                if python := self.args.python or (self.args.python_default and sys.executable):
+                    if not os.path.isdir(python):
+                        python = os.path.dirname(python)
+                    print(f"export PATH={python}:$PATH\n", file=file)
             run_error_command(pull.pull_number, self.args.time, file, self.args.sort)
+
         if filename:
             st = os.stat(filename)
             os.chmod(filename, st.st_mode | stat.S_IEXEC)
@@ -355,8 +359,6 @@ def parse(argv):
     add_parser = parser.add_subparsers(help="Commands:", dest="command").add_parser
     parsers = Namespace(**{k: add_parser(k, help=v) for k, v in _COMMANDS.items()})
 
-    # remaining bdeghjklmnpqtvxyz
-
     for name, p in vars(parsers).items():
         help = "Perform git fetch"
         p.add_argument("--fetch", "-f", action="store_true")
@@ -368,14 +370,8 @@ def parse(argv):
         p.add_argument("--rewrite-cache", "-w", action="store_true")
 
         if name == "errors":
-            help = "Seconds to wait, 0 means none"
-            p.add_argument("--time", "-t", default=0, type=int, help=help)
-
-            help = "Add path to some Python"
-            p.add_argument("--python", "-p", default="", type=str, help=help)
-
-            help = "Add path to current Python"
-            p.add_argument("--python-default", "-P", action="store_true", help=help)
+            help = "Code to insert before the test commands"
+            p.add_argument("--before", "-b", default="set -e", type=str, help=help)
 
             help = "Write to the default file, errors.sh"
             p.add_argument("--output", "-o", default="", type=str, help=help)
@@ -383,8 +379,17 @@ def parse(argv):
             help = "Write to the default file, errors.sh"
             p.add_argument("--output-default", "-O", action="store_true", help=help)
 
+            help = "Add Python or bin directory to the PATH"
+            p.add_argument("--python", "-p", default="", type=str, help=help)
+
+            help = "Add path to current Python to the PATH"
+            p.add_argument("--python-default", "-P", action="store_true", help=help)
+
             help = "Sort errors alphabetically"
             p.add_argument("--sort", "-s", action="store_true", help=help)
+
+            help = "Seconds to wait, 0 means none"
+            p.add_argument("--time", "-t", default=0, type=int, help=help)
 
         else:
             help = "The github user name"
