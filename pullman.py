@@ -16,6 +16,7 @@ from pathlib import Path
 from subprocess import CalledProcessError, run
 from typing import Any, Optional, Sequence
 
+
 try:
     import bs4
 except ImportError:
@@ -35,6 +36,25 @@ _COMMANDS = {
     "ref_url": "Print git ref id URL for a pull request",
     "url": "Print the URL for a pull request",
 }
+
+_N = "\n"
+HELP = f"""
+`pullman` lists your ongoing ghstack pull requests, prints and git
+references for them, prints or opens URLs, and can download unit test failures.
+
+## Commands
+
+{_N.join(f"* {k}: {v}" for k, v in _COMMANDS.items())}
+
+## Examples
+
+    pullman.py
+    pullman.py list
+
+Lists all the pull requests
+
+"""
+
 TOKEN_NAMES = "PULL_MANAGER_GIT_TOKEN", "GIT_TOKEN"
 GIT_TOKEN = next((token for n in TOKEN_NAMES if (token := os.environ.get(n))), None)
 
@@ -97,7 +117,6 @@ class PullRequest:
 
     @cached_property
     def commit_url(self) -> str:
-        upstream, _, ref = self.ref.partition("/")
         return f"{_COMMIT_PREFIX}{self.commit_id}"
 
     @cached_property
@@ -218,7 +237,7 @@ class PullRequests:
             return sorted(pulls, key=key, reverse=self.args.reverse)
 
         if self.args.all:
-            for user in self.pulls.items():
+            for user in self.pulls:
                 for p in clean_and_sort(user):
                     print(f"{user}: #{p.pull_number}: {p.subject}")
         else:
@@ -324,7 +343,7 @@ def _curl_command() -> str:
         '-H "Accept: application/vnd.github+json" '
         '-H "X-GitHub-Api-Version: 2022-11-28"'
     )
-    url = f"{APT_ROOT}/pulls"
+    url = f"{API_ROOT}/pulls"
     if GIT_TOKEN:
         auth = f'-H "Authorization: Bearer {GIT_TOKEN}"'
     else:
@@ -341,7 +360,7 @@ class ArgumentParser(argparse.ArgumentParser):
     """
     Adds better help formatting to argparse.ArgumentParser
     """
-    _epilog: str = ""
+    _epilog: str = HELP
 
     def exit(self, status: int = 0, message: Optional[str] = None):
         """
@@ -371,7 +390,7 @@ def parse(argv):
 
         if name == "errors":
             help = "Code to insert before the test commands"
-            p.add_argument("--before", "-b", default="set -e", type=str, help=help)
+            p.add_argument("--before", "-b", default="set -x", type=str, help=help)
 
             help = "Write to the default file, errors.sh"
             p.add_argument("--output", "-o", default="", type=str, help=help)
