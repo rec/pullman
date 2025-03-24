@@ -53,7 +53,7 @@ _REF_PREFIX = "https://github.com/pytorch/pytorch/tree/"
 _COMMIT_PREFIX = "https://github.com/pytorch/pytorch/commit/"
 
 FIELDS = "is_open", "pull_message", "pull_number", "ref"
-DEBUG = not True
+DEBUG = True
 
 
 class PullError(ValueError):
@@ -241,6 +241,7 @@ class PullRequests:
         try:
             return pull_requests_by_number[pull_number]
         except KeyError:
+            print(json.dumps(pull_requests_by_number, indent=2, sort_keys=True))
             raise PullError("no pull request") from None
 
     def _matching_pull(self) -> PullRequest:
@@ -284,7 +285,7 @@ class PullRequests:
             os.chmod(filename, st.st_mode | stat.S_IEXEC)
 
     @cached_property
-    def commit(self) -> str:
+    def pull(self) -> str:
         return self.args.pull or 'HEAD'
 
     @cached_property
@@ -385,7 +386,7 @@ def parse(argv):
 
         if name == "errors":
             help = "Code to insert before the test commands"
-            p.add_argument("--before", "-b", default="set -x", type=str, help=help)
+            p.add_argument("--before", "-b", default="", type=str, help=help)
 
             help = "Write to the default file, errors.sh"
             p.add_argument("--output", "-o", default="", type=str, help=help)
