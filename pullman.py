@@ -26,6 +26,7 @@ try:
 except ImportError:
     requests = None
 
+DEFAULT_CACHE_PATH = Path("~/.cache/pullman/pullman.json").expanduser()
 
 _COMMANDS = {
     "commit_url": "Print git ref id URL for a pull request",
@@ -37,23 +38,7 @@ _COMMANDS = {
     "url": "Print the URL for a pull request",
 }
 
-_N = "\n"
-HELP = f"""
-`pullman` lists your ongoing ghstack pull requests, prints and git
-references for them, prints or opens URLs, and can download unit test failures.
-
-## Commands
-
-{_N.join(f"* {k}: {v}" for k, v in _COMMANDS.items())}
-
-## Examples
-
-    pullman.py
-    pullman.py list
-
-Lists all the pull requests
-
-"""
+HELP = ""
 
 TOKEN_NAMES = "PULL_MANAGER_GIT_TOKEN", "GIT_TOKEN"
 GIT_TOKEN = next((token for n in TOKEN_NAMES if (token := os.environ.get(n))), None)
@@ -174,7 +159,7 @@ def _get_ghstack_message(ref: str) -> tuple[str, list[str]]:
 @dc.dataclass
 class PullRequests:
     argv: Optional[Sequence[str]] = None
-    path: Path = Path("~/.pull_manager.json").expanduser()
+    path: Path = DEFAULT_CACHE_PATH
 
     def load(self) -> None:
         if self.path.exists() and (pulls := json.loads(self.path.read_text())):
@@ -185,6 +170,7 @@ class PullRequests:
     def save(self) -> None:
         if (pulls := self.__dict__.get("pulls")) is not None:
             d = {k: [i.asdict() for i in v] for k, v in pulls.items()}
+            self.path.parent.mkdir(parents=True, exist_ok=True)
             self.path.write_text(json.dumps(d, indent=2))
 
     @cached_property
@@ -193,7 +179,7 @@ class PullRequests:
         for branch in _run("git branch -r"):
             pr = PullRequest(branch.strip())
             try:
-                if self.args.all or pr.user == self.user:
+                if getattr(self.args, "all", False) or pr.user == self.user:
                     result.setdefault(pr.user, []).append(pr)
             except PullError:
                 pass
@@ -220,6 +206,10 @@ class PullRequests:
             self.save()
 
     def _list(self):
+        search = " ".join(self.args.search)
+        if search.startswith(":/"):
+            search = search[2:]
+
         def clean_and_sort(user: str) -> list[PullRequest]:
             pulls = []
             if user not in self.pulls:
@@ -228,7 +218,7 @@ class PullRequests:
             for p in self.pulls[user]:
                 try:
                     p.pull_number
-                    if self.args.search in p.subject and (self.args.closed or p.is_open):
+                    if search in p.subject and (self.args.closed or p.is_open):
                         pulls.append(p)
                 except PullError:
                     pass
@@ -254,20 +244,18 @@ class PullRequests:
             raise PullError("no pull request") from None
 
     def _matching_pull(self) -> PullRequest:
-        if self.commit.startswith("#"):
-            return self._get_pull(self.commit[1:])
+        if self.pull.startswith("#"):
+            return self._get_pull(self.pull[1:])
 
-        if self.commit.isnumeric() and len(self.commit) < 7:
-            return self._get_pull(self.commit)
+        if self.pull.startswith(":/"):
+            if pl := [p for p in self.pulls[self.user] if self.pull[2:] in p.subject]:
+                return pl[-1]
+            raise PullError(f"Can't find any commits matching {self.pull}")
 
         try:
-            return self._get_pull(_get_ghstack_message(self.commit)[0])
+            return self._get_pull(_get_ghstack_message(self.pull)[0])
         except CalledProcessError:
-            pass
-
-        if pulls := [p for p in self.pulls[self.user] if self.commit in p.subject]:
-            return pulls[-1]
-        raise PullError("Can't find any matches")
+            raise PullError(f"No such commit {self.pull}") from None
 
     def _errors(self) -> None:
         if bad := ["bs4"] * (bs4 is None) + ["requests"] * (requests is None):
@@ -277,6 +265,7 @@ class PullRequests:
 
         pull = self._matching_pull()
         if filename := self.args.output or (self.args.output_default and "errors.sh"):
+            print("Writing", filename, file=sys.stderr)
             context = file = open(filename, "w")
         else:
             context, file = nullcontext(), sys.stdout
@@ -296,7 +285,7 @@ class PullRequests:
 
     @cached_property
     def commit(self) -> str:
-        return self.args.commit or 'HEAD'
+        return self.args.pull or 'HEAD'
 
     @cached_property
     def args(self):
@@ -304,11 +293,17 @@ class PullRequests:
 
     @cached_property
     def remotes(self):
+        """Will add an upstream remote if it doesn't exist!"""
         remotes = {}
         for s in _run("git remote -v"):
             remote, url, _ = s.split()
             user = url.partition(":")[2].partition("/")[0]
             remotes[remote] = user
+
+        if "upstream" not in remotes:
+            remote = "git@github.com:pytorch/pytorch.git"
+            _run(f"git remote add upstream {remote}")
+            remotes["upstream"] = remote
 
         return remotes
 
@@ -382,7 +377,7 @@ def parse(argv):
         help = "Perform git fetch"
         p.add_argument("--fetch", "-f", action="store_true")
 
-        help = "Ignore cache"
+        help = "Ignore pullman's cache"
         p.add_argument("--ignore-cache", "-i", action="store_true")
 
         help = "Rewrite cache"
@@ -415,8 +410,8 @@ def parse(argv):
             p.add_argument("--user", "-u", default=None, help=help)
 
         if name == "list":
-            help = "A term to match in git subjects"
-            p.add_argument("search", nargs="?", default="", help=help)
+            help = "A string to match in git subjects"
+            p.add_argument("search", nargs="*", default="", help=help)
 
             help = "List all users"
             p.add_argument("--all", "-a", action="store_true")
@@ -431,8 +426,11 @@ def parse(argv):
             p.add_argument("--sort", "-s", action="store_true", help=help)
 
         else:
-            help = "An optional commit, PR index, pull request, or term to search"
-            p.add_argument("commit", nargs="?", default="", help=help)
+            help = (
+                "An optional commit, PR index, pull request number (starts with #),"
+                " or search term (starts with :/)"
+            )
+            p.add_argument("pull", nargs="?", default="", help=help)
 
             if name.endswith("url"):
                 help = "Open the URL in the browser"
