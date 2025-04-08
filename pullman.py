@@ -192,15 +192,22 @@ class PullRequests:
         if not (self.args.ignore_cache or self.args.rewrite_cache):
             self.load()
 
-        if self.args.command == "list":
-            self._list()
-        elif self.args.command == "errors":
-            self._errors()
-        else:
-            value = getattr(self._matching_pull(), self.args.command)
-            print(value)
-            if self.args.command.endswith("url") and self.args.open:
-                webbrowser.open(value)
+        try:
+            if self.args.command == "list":
+                self._list()
+            elif self.args.command == "errors":
+                self._errors()
+            else:
+                value = getattr(self._matching_pull(), self.args.command)
+                print(value)
+                if self.args.command.endswith("url") and self.args.open:
+                    webbrowser.open(value)
+        except PullError as e:
+            arg = getattr(self.args, "pull", None) or getattr(self.args, "search", None)
+            msg = f"ERROR: {e.args[0]}"
+            if arg and not msg.endswith(arg):
+                msg = f"{msg} for {arg}"
+            sys.exit(msg)
 
         if not self.args.ignore_cache:
             self.save()
@@ -241,8 +248,7 @@ class PullRequests:
         try:
             return pull_requests_by_number[pull_number]
         except KeyError:
-            print(json.dumps(pull_requests_by_number, indent=2, sort_keys=True))
-            raise PullError("no pull request") from None
+            raise PullError("No such pull request (maybe fetch?)") from None
 
     def _matching_pull(self) -> PullRequest:
         if self.pull.startswith("#"):
@@ -278,7 +284,7 @@ class PullRequests:
                     if not os.path.isdir(python):
                         python = os.path.dirname(python)
                     print(f"export PATH={python}:$PATH\n", file=file)
-            run_error_command(pull.pull_number, self.args.time, file, self.args.sort)
+            run_error_command(pull.pull_number, self.args, file)
 
         if filename:
             st = os.stat(filename)
@@ -385,6 +391,9 @@ def parse(argv):
         p.add_argument("--rewrite-cache", "-w", action="store_true")
 
         if name == "errors":
+            help = "Show tests with each env variable combination that fails"
+            p.add_argument("--all-env-combos", "-a", action="store_true", help=help)
+
             help = "Code to insert before the test commands"
             p.add_argument("--before", "-b", default="", type=str, help=help)
 
@@ -462,11 +471,23 @@ SECONDS_TO_WAIT = 0
 HREF_PREFIX = "/pytorch/pytorch/actions/runs/"
 
 
-def run_error_command(pull_id, seconds, file, sort=True):
+def run_error_command(pull_id, args, file):
     run_ids = _get_run_ids(pull_id)
     last_cmd = ''
-    commands = _failed_test_commands(run_ids, seconds)
-    if sort:
+    commands = _failed_test_commands(run_ids, args.time)
+    if not args.all_env_combos:
+        d = {}
+        for c, job_id in commands:
+            before, _, after = c.partition("python ")
+            if before and any(c_id := d.get(after, (None, None))):
+                cmd, id = c_id
+                if len(c) >= len(cmd):
+                    continue
+            d[after] = c, job_id
+
+        commands = d.values()
+
+    if args.sort:
         commands = sorted(commands)
 
     for cmd, job_id in commands:
