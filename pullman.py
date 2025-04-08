@@ -27,6 +27,7 @@ except ImportError:
     requests = None
 
 DEFAULT_CACHE_PATH = Path("~/.cache/pullman/pullman.json").expanduser()
+DEFAULT_OUT = "unit-test-failures.sh"
 
 _COMMANDS = {
     "commit_url": "Print git ref id URL for a pull request",
@@ -274,24 +275,29 @@ class PullRequests:
             raise PullError(msg)
 
         pull = self._matching_pull()
-        if filename := self.args.output or (self.args.output_default and "errors.sh"):
-            print("Writing", filename, file=sys.stderr)
-            context = file = open(filename, "w")
-        else:
+        if self.args.output_to_terminal:
             context, file = nullcontext(), sys.stdout
+            print(f"Reading {pull.url}", file=sys.stderr)
+        else:
+            context = file = open(self.args.output, "w")
+            msg = f"Writing {self.args.output} for {pull.url}"
+            print(msg, file=sys.stderr)
 
         with context:
-            if filename:
-                print(f"#!/bin/bash\n\n{self.args.before}\n", file=file)
-                if python := self.args.python or (self.args.python_default and sys.executable):
-                    if not os.path.isdir(python):
-                        python = os.path.dirname(python)
-                    print(f"export PATH={python}:$PATH\n", file=file)
+            if not self.args.output_to_terminal:
+                print(f"#!/bin/bash\n\n# Failed tests for {pull.url}\n", file=file)
+                if self.args.before:
+                    print(f"{self.args.before}\n", file=file)
+
+                if self.args.python or (self.args.python_default and sys.executable):
+                    if not os.path.isdir(self.args.python):
+                        python = os.path.dirname(self.args.python)
+                    print(f"export PATH={self.args.python}:$PATH\n", file=file)
             run_error_command(pull.pull_number, self.args, file)
 
-        if filename:
-            st = os.stat(filename)
-            os.chmod(filename, st.st_mode | stat.S_IEXEC)
+        if not self.args.output_to_terminal:
+            st = os.stat(self.args.output)
+            os.chmod(self.args.output, st.st_mode | stat.S_IEXEC)
 
     @cached_property
     def pull(self) -> str:
@@ -400,11 +406,14 @@ def parse(argv):
             help = "Code to insert before the test commands"
             p.add_argument("--before", "-b", default="", type=str, help=help)
 
-            help = "Write to the default file, errors.sh"
-            p.add_argument("--output", "-o", default="", type=str, help=help)
+            help = "Select a conda environment before running"
+            p.add_argument("--conda", "-c", default="", type=str, help=help)
 
-            help = "Write to the default file, errors.sh"
-            p.add_argument("--output-default", "-O", action="store_true", help=help)
+            help = "Write to an output file"
+            p.add_argument("--output", "-o", default=DEFAULT_OUT, type=str, help=help)
+
+            help = "Write to the terminal"
+            p.add_argument("--output-to-terminal", "-O", action="store_true", help=help)
 
             help = "Add Python or bin directory to the PATH"
             p.add_argument("--python", "-p", default="", type=str, help=help)
