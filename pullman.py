@@ -9,7 +9,7 @@ import stat
 import sys
 import webbrowser
 from argparse import Namespace
-from contextlib import nullcontext
+from contextlib import nullcontext, suppress
 from functools import cache, cached_property
 from operator import attrgetter
 from pathlib import Path
@@ -178,11 +178,9 @@ class PullRequests:
         result: dict[str, list[PullRequest]] = {}
         for branch in _run("git branch -r"):
             pr = PullRequest(branch.strip())
-            try:
+            with suppress(PullError):
                 if getattr(self.args, "all", False) or pr.user == self.user:
                     result.setdefault(pr.user, []).append(pr)
-            except PullError:
-                pass
         return result
 
     def __call__(self) -> None:
@@ -205,7 +203,7 @@ class PullRequests:
         except PullError as e:
             arg = getattr(self.args, "pull", None) or getattr(self.args, "search", None)
             msg = f"ERROR: {e.args[0]}"
-            if arg and not msg.endswith(arg):
+            if arg and not arg in msg:
                 msg = f"{msg} for {arg}"
             sys.exit(msg)
 
@@ -223,12 +221,10 @@ class PullRequests:
                 print(self.pulls)
 
             for p in self.pulls[user]:
-                try:
+                with suppress(PullError):
                     p.pull_number
                     if search in p.subject and (self.args.closed or p.is_open):
                         pulls.append(p)
-                except PullError:
-                    pass
 
             key = attrgetter("subject" if self.args.sort else "pull_number")
             return sorted(pulls, key=key, reverse=self.args.reverse)
@@ -251,18 +247,25 @@ class PullRequests:
             raise PullError("No such pull request (maybe fetch?)") from None
 
     def _matching_pull(self) -> PullRequest:
+        def search(s: str) -> PullRequest:
+            if pl := [p for p in self.pulls[self.user] if s in p.subject]:
+                return pl[-1]
+            raise PullError(f"Can't find any commits matching '{self.pull}'")
+
         if self.pull.startswith("#"):
             return self._get_pull(self.pull[1:])
 
         if self.pull.startswith(":/"):
-            if pl := [p for p in self.pulls[self.user] if self.pull[2:] in p.subject]:
-                return pl[-1]
-            raise PullError(f"Can't find any commits matching {self.pull}")
+            return search(self.pull[2:])
 
-        try:
+        with suppress(CalledProcessError):
             return self._get_pull(_get_ghstack_message(self.pull)[0])
-        except CalledProcessError:
-            raise PullError(f"No such commit {self.pull}") from None
+
+        if self.pull.isnumeric():
+            with suppress(PullError):
+                return self._get_pull(self.pull)
+
+        return search(self.pull)
 
     def _errors(self) -> None:
         if bad := ["bs4"] * (bs4 is None) + ["requests"] * (requests is None):
@@ -448,7 +451,7 @@ def parse(argv):
 
     args = sys.argv[1:]
     if "-h" not in args and "--help" not in args:
-        if not (args and args[0] and args[0][0] != "-"):
+        if not (args and args[0] in _COMMANDS):
             args = "list", *args
 
     return parser.parse_args(args)
