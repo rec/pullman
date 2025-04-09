@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "pullman"
-version = "0.9"
+version = "0.9.1"
 description = "🥞 Manage ghstack pull requests 🥞"
 authors = ["Tom Ritchford <tom@swirly.com>"]
 license = "MIT"
