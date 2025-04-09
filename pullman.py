@@ -6,6 +6,7 @@ import json
 import os
 import re
 import stat
+import subprocess
 import sys
 import webbrowser
 from argparse import Namespace
@@ -26,17 +27,27 @@ try:
 except ImportError:
     requests = None
 
+
+UPDATE_SUBMODULES = "git submodule update --init --recursive"
+CONFLICT_MSG = f"""
+After resolving any conflicts, type:
+
+    git rebase --continue
+    {UPDATE_SUBMODULES}"
+"""
+
 DEFAULT_CACHE_PATH = Path("~/.cache/pullman/pullman.json").expanduser()
 DEFAULT_OUT = "unit-test-failures.sh"
 
 _COMMANDS = {
-    "commit_url": "Print git ref id URL for a pull request",
+    "checkout": "Call `ghstack checkout` on this pull request",
+    "commit_url": "Show gitub URL for the commit for this pull request",
     "errors": "Download all the errors for a pull request",
     "hud_url": "HUD URL for a pull request",
     "list": "List all pull requests",
-    "ref": "Print git ref id of a pull request",
-    "ref_url": "Print git ref id URL for a pull request",
-    "url": "Print the URL for a pull request",
+    "ref": "Show git ref id of a pull request",
+    "ref_url": "Show git ref id URL for a pull request",
+    "url": "Show the URL for a pull request",
 }
 
 HELP = ""
@@ -55,6 +66,7 @@ _COMMIT_PREFIX = "https://github.com/pytorch/pytorch/commit/"
 
 FIELDS = "is_open", "pull_message", "pull_number", "ref"
 DEBUG = True
+VERBOSE = False
 
 
 class PullError(ValueError):
@@ -185,6 +197,9 @@ class PullRequests:
         return result
 
     def __call__(self) -> None:
+        global VERBOSE
+        VERBOSE = self.args.verbose
+
         if self.args.fetch:
             _run("git fetch upstream")
 
@@ -192,15 +207,7 @@ class PullRequests:
             self.load()
 
         try:
-            if self.args.command == "list":
-                self._list()
-            elif self.args.command == "errors":
-                self._errors()
-            else:
-                value = getattr(self._matching_pull(), self.args.command)
-                print(value)
-                if self.args.command.endswith("url") and self.args.open:
-                    webbrowser.open(value)
+            getattr(self, "_" + self.args.command, self._url_command)()
         except PullError as e:
             arg = getattr(self.args, "pull", None) or getattr(self.args, "search", None)
             msg = f"ERROR: {e.args[0]}"
@@ -210,6 +217,30 @@ class PullRequests:
 
         if not self.args.ignore_cache:
             self.save()
+
+    def _checkout(self):
+        fields = "rebase_against", "rebase_main", "rebase_strict"
+        if sum(bool(getattr(self.args, f)) for f in fields) > 1:
+            flags = ", ".join("--" + f for f in fields)
+            sys.exit(f"At most one of {flags} can be set")
+
+        _run(f"ghstack checkout {self._matching_pull().url}")
+        if rebase := (
+            self.args.rebase_against
+            or (self.args.rebase_main and 'upstream/main')
+            or (self.args.rebase_strict and 'upstream/viable/strict')
+        ):
+            try:
+                _run("git rebase upstream/viable/strict")
+            except CalledProcessError:
+                sys.exit(CONFLICT_MSG)
+            _run(UPDATE_SUBMODULES)
+
+    def _url_command(self):
+        value = getattr(self._matching_pull(), self.args.command)
+        print(value)
+        if self.args.command.endswith("url") and self.args.open:
+            webbrowser.open(value)
 
     def _list(self):
         search = " ".join(self.args.search)
@@ -245,7 +276,8 @@ class PullRequests:
         try:
             return pull_requests_by_number[pull_number]
         except KeyError:
-            raise PullError("No such pull request (maybe fetch?)") from None
+            msg = "No such pull request (rerun with -fw if you know it exists)"
+            raise PullError(msg) from None
 
     def _matching_pull(self) -> PullRequest:
         def search(s: str) -> PullRequest:
@@ -332,6 +364,8 @@ class PullRequests:
 
 
 def _run_raw(cmd: str, print_error: bool = True):
+    if VERBOSE:
+        print("$", cmd, file=sys.stderr)
     try:
         return run(cmd, capture_output=True, text=True, check=True, shell=True).stdout
     except CalledProcessError as e:
@@ -396,6 +430,9 @@ def parse(argv):
         help = "Ignore pullman's cache"
         p.add_argument("--ignore-cache", "-i", action="store_true")
 
+        help = "Print each command before it's executed"
+        p.add_argument("--verbose", "-v", action="store_true")
+
         help = "Rewrite cache"
         p.add_argument("--rewrite-cache", "-w", action="store_true")
 
@@ -426,6 +463,16 @@ def parse(argv):
 
             help = "Seconds to wait, 0 means none"
             p.add_argument("--time", "-t", default=0, type=int, help=help)
+
+        elif name == "checkout":
+            help = "Also rebase against a given git ref"
+            p.add_argument("--rebase-against", "-R", type=str, default="", help=help)
+
+            help = "Also rebase against upstream/main"
+            p.add_argument("--rebase-main", "-m", action="store_true", help=help)
+
+            help = "Also rebase against upstream/viable/strict"
+            p.add_argument("--rebase-strict", "-r", action="store_true", help=help)
 
         else:
             help = "The github user name"
@@ -458,12 +505,12 @@ def parse(argv):
                 help = "Open the URL in the browser"
                 p.add_argument("--open", "-o", action="store_true", help=help)
 
-    args = sys.argv[1:]
-    if "-h" not in args and "--help" not in args:
-        if not (args and args[0] in _COMMANDS):
-            args = "list", *args
+    argv = sys.argv[1:]
+    if "-h" not in argv and "--help" not in argv:
+        if not (argv and argv[0] in _COMMANDS):
+            argv = "list", *argv
 
-    return parser.parse_args(args)
+    return parser.parse_args(argv)
 
 
 # from failed_test_commands.py
