@@ -1,4 +1,4 @@
-#!/bin/env python3
+#!/usr/bin/env python3
 
 import argparse
 import dataclasses as dc
@@ -22,8 +22,7 @@ import requests
 
 
 UPDATE_SUBMODULES = "git submodule update --init --recursive"
-CONFLICT_MSG = f"""
-After resolving any conflicts, type:
+CONFLICT_MSG = f"""After resolving any conflicts, type:
 
     git rebase --continue
     {UPDATE_SUBMODULES}"
@@ -31,6 +30,7 @@ After resolving any conflicts, type:
 
 DEFAULT_CACHE_PATH = Path("~/.cache/pullman/pullman.json").expanduser()
 DEFAULT_OUT = "unit-test-failures.sh"
+MULTIUSERS_ENABLED = False
 
 _COMMANDS = {
     "checkout": "Call `ghstack checkout` on this pull request",
@@ -203,10 +203,10 @@ class PullRequests:
             getattr(self, "_" + self.args.command, self._url_command)()
         except PullError as e:
             arg = getattr(self.args, "pull", None) or getattr(self.args, "search", None)
-            msg = f"ERROR: {e.args[0]}"
+            msg = e.args[0]
             if arg and not arg in msg:
                 msg = f"{msg} for {arg}"
-            sys.exit(msg)
+            exit(msg)
 
         if not self.args.ignore_cache:
             self.save()
@@ -215,7 +215,7 @@ class PullRequests:
         fields = "rebase_against", "rebase_main", "rebase_strict"
         if sum(bool(getattr(self.args, f)) for f in fields) > 1:
             flags = ", ".join("--" + f for f in fields)
-            sys.exit(f"At most one of {flags} can be set")
+            exit(f"At most one of {flags} can be set")
 
         _run(f"ghstack checkout {self._matching_pull().url}")
         if rebase := (
@@ -226,7 +226,7 @@ class PullRequests:
             try:
                 _run("git rebase upstream/viable/strict")
             except CalledProcessError:
-                sys.exit(CONFLICT_MSG)
+                exit(CONFLICT_MSG)
             _run(UPDATE_SUBMODULES)
 
     def _url_command(self):
@@ -462,7 +462,7 @@ def parse(argv):
             help = "Also rebase against upstream/viable/strict"
             p.add_argument("--rebase-strict", "-r", action="store_true", help=help)
 
-        else:
+        elif MULTIUSERS_ENABLED:
             help = "The github user name"
             p.add_argument("--user", "-u", default=None, help=help)
 
@@ -470,8 +470,9 @@ def parse(argv):
             help = "A string to match in git subjects"
             p.add_argument("search", nargs="*", default="", help=help)
 
-            help = "List all users"
-            p.add_argument("--all", "-a", action="store_true")
+            if MULTIUSERS_ENABLED:
+                help = "List all users"
+                p.add_argument("--all", "-a", action="store_true")
 
             help = "Also show closed pull requests"
             p.add_argument("--closed", "-c", action="store_true", help=help)
@@ -574,7 +575,7 @@ def _get_failures(segment, run_id, seconds):
             jobs = json["jobs"]
         except KeyError:
             print(json, file=sys.stderr)
-            sys.exit(1)
+            exit("Bad JSON")
 
         not_finished = sum(not j["conclusion"] for j in jobs)
         if not_finished:
@@ -609,12 +610,18 @@ def _api_get(path):
     return requests.get(f"{API_ROOT}/{path}", headers=HEADERS)
 
 
-if __name__ == '__main__':
+def exit(s: str):
+    sys.exit(f"ERROR: {s}")
+
+
+def main():
     try:
         PullRequests()()
     except PullError as e:
         if DEBUG:
             raise
-        msg = f'ERROR: {e.args[0]}'
-        print(msg)
-        sys.exit(-1)
+        exit(e.args[0])
+
+
+if __name__ == '__main__':
+    main()
