@@ -1,0 +1,17 @@
+[tool.poetry]
+name = "pullman"
+version = "0.8"
+description = "🥞 Manage ghstack pull requests 🥞"
+authors = ["Tom Ritchford <tom@swirly.com>"]
+license = "MIT"
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "^3.9"
+
+[tool.poetry.scripts]
+pullman = "pullman:main"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
