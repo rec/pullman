@@ -185,10 +185,8 @@ class PullRequests:
         result: dict[str, list[PullRequest]] = {}
         for branch in _run("git branch -r"):
             pr = PullRequest(branch.strip())
-            if MULTIUSERS_ENABLED:
-                with suppress(PullError):
-                    if getattr(self.args, "all", False) or pr.user == self.user:
-                        result.setdefault(pr.user, []).append(pr)
+            with suppress(PullError):
+                result.setdefault(pr.user, []).append(pr)
         return result
 
     def __call__(self) -> None:
@@ -203,6 +201,8 @@ class PullRequests:
 
         if not self.pulls:
             exit("No pull requests found. Perhaps this isn't a ghstack project?")
+        if self.user not in self.pulls:
+            exit("No pull requests found for user '{self.user}")
         try:
             getattr(self, "_" + self.args.command, self._url_command)()
         except PullError as e:
@@ -216,10 +216,10 @@ class PullRequests:
             self.save()
 
     def _checkout(self):
-        fields = "rebase_against", "rebase_main", "rebase_strict"
-        if sum(bool(getattr(self.args, f)) for f in fields) > 1:
-            flags = ", ".join("--" + f for f in fields)
-            exit(f"At most one of {flags} can be set")
+        flags = "rebase_against", "rebase_main", "rebase_strict"
+        if sum(bool(getattr(self.args, f)) for f in flags) > 1:
+            set_flags = ", ".join("--" + f for f in flags)
+            exit(f"At most one of {set_flags} can be set")
 
         _run(f"ghstack checkout {self._matching_pull().url}")
         if rebase := (
@@ -264,7 +264,7 @@ class PullRequests:
                 for p in user_pulls:
                     print(f"#{p.pull_number}: {p.subject}")
             else:
-                exit(f"No pulls found for {user=}")
+                exit(f"No pulls found for user='{self.user}'")
 
     def _get_pull(self, pull_number: str) -> PullRequest:
         user_pulls = self.pulls.values()
@@ -343,12 +343,15 @@ class PullRequests:
         if "upstream" not in remotes:
             remote = "git@github.com:pytorch/pytorch.git"
             _run(f"git remote add upstream {remote}")
+            print("Adding a new remote, 'upstream'", file=sys.stdout)
             remotes["upstream"] = remote
 
         return remotes
 
     @cached_property
-    def user(self):
+    def user(self) -> str:
+        if self.args.user:
+            return self.args.user
         if len(self.remotes) != 1:
             return self.remotes["origin"]
         for r in self.remotes.values():
@@ -466,9 +469,9 @@ def parse(argv):
             help = "Also rebase against upstream/viable/strict"
             p.add_argument("--rebase-strict", "-r", action="store_true", help=help)
 
-        elif MULTIUSERS_ENABLED:
+        else:
             help = "The github user name"
-            p.add_argument("--user", "-u", default=None, help=help)
+            p.add_argument("--user", "-u", default="", type=str, help=help)
 
         if name == "list":
             help = "A string to match in git subjects"
