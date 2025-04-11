@@ -201,6 +201,8 @@ class PullRequests:
         if not (self.args.ignore_cache or self.args.rewrite_cache):
             self.load()
 
+        if not self.pulls:
+            exit("No pull requests found. Perhaps this isn't a ghstack project?")
         try:
             getattr(self, "_" + self.args.command, self._url_command)()
         except PullError as e:
@@ -244,10 +246,7 @@ class PullRequests:
 
         def clean_and_sort(user: str) -> list[PullRequest]:
             pulls = []
-            if user not in self.pulls:
-                print(self.pulls)
-
-            for p in self.pulls[user]:
+            for p in self.pulls.get(user, ()):
                 with suppress(PullError):
                     p.pull_number
                     if search in p.subject and (self.args.closed or p.is_open):
@@ -258,11 +257,14 @@ class PullRequests:
 
         if MULTIUSERS_ENABLED and self.args.all:
             for user in self.pulls:
-                for p in clean_and_sort(user):
+                for p in user_pulls:
                     print(f"{user}: #{p.pull_number}: {p.subject}")
         else:
-            for p in clean_and_sort(self.user):
-                print(f"#{p.pull_number}: {p.subject}")
+            if user_pulls := clean_and_sort(self.user):
+                for p in user_pulls:
+                    print(f"#{p.pull_number}: {p.subject}")
+            else:
+                exit(f"No pulls found for {user=}")
 
     def _get_pull(self, pull_number: str) -> PullRequest:
         user_pulls = self.pulls.values()
