@@ -20,6 +20,18 @@ from typing import Any, Optional, Sequence
 import bs4
 import requests
 
+HELP = "HELP GOES HERE"
+
+_COMMANDS = {
+    "checkout": "Call `ghstack checkout` on this pull request",
+    "commit_url": "Show gitub URL for the commit for this pull request",
+    "errors": "Download all the errors for a pull request",
+    "hud_url": "HUD URL for a pull request",
+    "list": "List all pull requests (the default)",
+    "ref": "Show git ref id of a pull request",
+    "ref_url": "Show git ref id URL for a pull request",
+    "url": "Show the URL for a pull request",
+}
 
 UPDATE_SUBMODULES = "git submodule update --init --recursive"
 CONFLICT_MSG = f"""After resolving any conflicts, type:
@@ -30,20 +42,6 @@ CONFLICT_MSG = f"""After resolving any conflicts, type:
 
 DEFAULT_CACHE_PATH = Path("~/.cache/pullman/pullman.json").expanduser()
 DEFAULT_OUT = "unit-test-failures.sh"
-MULTIUSERS_ENABLED = False
-
-_COMMANDS = {
-    "checkout": "Call `ghstack checkout` on this pull request",
-    "commit_url": "Show gitub URL for the commit for this pull request",
-    "errors": "Download all the errors for a pull request",
-    "hud_url": "HUD URL for a pull request",
-    "list": "List all pull requests",
-    "ref": "Show git ref id of a pull request",
-    "ref_url": "Show git ref id URL for a pull request",
-    "url": "Show the URL for a pull request",
-}
-
-HELP = ""
 
 TOKEN_NAMES = "PULL_MANAGER_GIT_TOKEN", "GIT_TOKEN"
 GIT_TOKEN = next((token for n in TOKEN_NAMES if (token := os.environ.get(n))), None)
@@ -57,7 +55,9 @@ _PULL_REQUEST_RESOLVED = "Pull Request resolved:"
 _REF_PREFIX = "https://github.com/pytorch/pytorch/tree/"
 _COMMIT_PREFIX = "https://github.com/pytorch/pytorch/commit/"
 
-FIELDS = "is_open", "pull_message", "pull_number", "ref"
+MULTIUSERS_ENABLED = False
+
+FIELDS_TO_SERIALIZE = "is_open", "pull_message", "pull_number", "ref"
 DEBUG = True
 VERBOSE = False
 
@@ -120,7 +120,8 @@ class PullRequest:
         return f"{_REF_PREFIX}{ref}"
 
     def asdict(self) -> dict[str, Any]:
-        return {f: v for f in FIELDS if (v := self.__dict__.get(f)) is not None}
+        fv = ((f, self.__dict__.get(f)) for f in FIELDS_TO_SERIALIZE)
+        return {f: v for f, v in fv if v is not None}
 
     @classmethod
     def fromdict(cls, ref: str, **kwargs: Any) -> "PullRequest":
@@ -184,9 +185,10 @@ class PullRequests:
         result: dict[str, list[PullRequest]] = {}
         for branch in _run("git branch -r"):
             pr = PullRequest(branch.strip())
-            with suppress(PullError):
-                if getattr(self.args, "all", False) or pr.user == self.user:
-                    result.setdefault(pr.user, []).append(pr)
+            if MULTIUSERS_ENABLED:
+                with suppress(PullError):
+                    if getattr(self.args, "all", False) or pr.user == self.user:
+                        result.setdefault(pr.user, []).append(pr)
         return result
 
     def __call__(self) -> None:
@@ -254,7 +256,7 @@ class PullRequests:
             key = attrgetter("subject" if self.args.sort else "pull_number")
             return sorted(pulls, key=key, reverse=self.args.reverse)
 
-        if self.args.all:
+        if MULTIUSERS_ENABLED and self.args.all:
             for user in self.pulls:
                 for p in clean_and_sort(user):
                     print(f"{user}: #{p.pull_number}: {p.subject}")
@@ -496,8 +498,11 @@ def parse(argv):
 
     argv = sys.argv[1:]
     if "-h" not in argv and "--help" not in argv:
-        if not (argv and argv[0] in _COMMANDS):
+        if not argv or argv[0].startswith("-"):
             argv = "list", *argv
+        else:
+            matches = [c for c in _COMMANDS if c.startswith(argv[0])] or ["list"]
+            argv[0] = min((len(m), m) for m in matches)[1]
 
     return parser.parse_args(argv)
 
