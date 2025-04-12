@@ -17,8 +17,15 @@ from pathlib import Path
 from subprocess import CalledProcessError, run
 from typing import Any, Optional, Sequence
 
-import bs4
-import requests
+
+try:
+    import bs4
+except ImportError:
+    bs4 = None
+try:
+    import requests
+except ImportError:
+    requests = None
 
 HELP = "HELP GOES HERE"
 
@@ -298,6 +305,11 @@ class PullRequests:
         return search(self.pull)
 
     def _errors(self) -> None:
+        if bad := ["bs4"] * (bs4 is None) + ["requests"] * (requests is None):
+            cmd = f"{sys.executable} -m pip install {' '.join(bad)}"
+            msg = f"To use `pullman errors`, install {', '.join(bad)} with\n\n    {cmd}"
+            raise PullError(msg)
+
         pull = self._matching_pull()
         if self.args.output_to_terminal:
             context, file = nullcontext(), sys.stdout
