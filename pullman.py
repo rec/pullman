@@ -200,9 +200,9 @@ class PullRequests:
             self.load()
 
         if not self.pulls:
-            exit("No pull requests found. Perhaps this isn't a ghstack project?")
+            error("No pull requests found. Perhaps this isn't a ghstack project?")
         if self.user not in self.pulls:
-            exit("No pull requests found for user '{self.user}")
+            error("No pull requests found for user '{self.user}")
         try:
             getattr(self, "_" + self.args.command, self._url_command)()
         except PullError as e:
@@ -210,7 +210,7 @@ class PullRequests:
             msg = e.args[0]
             if arg and not arg in msg:
                 msg = f"{msg} for {arg}"
-            exit(msg)
+            error(msg)
 
         if not self.args.ignore_cache:
             self.save()
@@ -219,7 +219,7 @@ class PullRequests:
         flags = "rebase_against", "rebase_main", "rebase_strict"
         if sum(bool(getattr(self.args, f)) for f in flags) > 1:
             set_flags = ", ".join("--" + f for f in flags)
-            exit(f"At most one of {set_flags} can be set")
+            error(f"At most one of {set_flags} can be set")
 
         _run(f"ghstack checkout {self._matching_pull().url}")
         if rebase := (
@@ -230,7 +230,7 @@ class PullRequests:
             try:
                 _run("git rebase upstream/viable/strict")
             except CalledProcessError:
-                exit(CONFLICT_MSG)
+                error(CONFLICT_MSG)
             _run(UPDATE_SUBMODULES)
 
     def _url_command(self):
@@ -264,7 +264,7 @@ class PullRequests:
                 for p in user_pulls:
                     print(f"#{p.pull_number}: {p.subject}")
             else:
-                exit(f"No pulls found for user='{self.user}'")
+                error(f"No pulls found for user='{self.user}'")
 
     def _get_pull(self, pull_number: str) -> PullRequest:
         user_pulls = self.pulls.values()
@@ -325,7 +325,7 @@ class PullRequests:
 
     @cached_property
     def pull(self) -> str:
-        return self.args.pull or 'HEAD'
+        return " ".join(self.args.pull) or 'HEAD'
 
     @cached_property
     def args(self):
@@ -492,10 +492,10 @@ def parse(argv):
 
         else:
             help = (
-                "An optional commit, PR index, pull request number (starts with #),"
-                " or search term (starts with :/)"
+                "An optional commit, PR index, pull request number (can start with #),"
+                " or search term (can start with :/)"
             )
-            p.add_argument("pull", nargs="?", default="", help=help)
+            p.add_argument("pull", nargs="*", default="", help=help)
 
             if name.endswith("url"):
                 help = "Open the URL in the browser"
@@ -505,10 +505,10 @@ def parse(argv):
     if "-h" not in argv and "--help" not in argv:
         if not argv or argv[0].startswith("-"):
             argv = "list", *argv
-        else:
-            matches = [c for c in _COMMANDS if c.startswith(argv[0])] or ["list"]
+        elif matches := [c for c in _COMMANDS if c.startswith(argv[0])]:
             argv[0] = min((len(m), m) for m in matches)[1]
-
+        else:
+            argv = "list", *argv
     return parser.parse_args(argv)
 
 
@@ -585,7 +585,7 @@ def _get_failures(segment, run_id, seconds):
             jobs = json["jobs"]
         except KeyError:
             print(json, file=sys.stderr)
-            exit("Bad JSON")
+            error("Bad JSON")
 
         not_finished = sum(not j["conclusion"] for j in jobs)
         if not_finished:
@@ -620,7 +620,7 @@ def _api_get(path):
     return requests.get(f"{API_ROOT}/{path}", headers=HEADERS)
 
 
-def exit(s: str):
+def error(s: str):
     sys.exit(f"ERROR: {s}")
 
 
@@ -630,7 +630,7 @@ def main():
     except PullError as e:
         if DEBUG:
             raise
-        exit(e.args[0])
+        error(e.args[0])
 
 
 if __name__ == '__main__':
