@@ -159,7 +159,7 @@ def _get_ghstack_message(ref: str) -> tuple[str, list[str]]:
     if not urls:
         raise PullError("not a ghstack pull request")
     if len(urls) > 1:
-        raise PullError("Malformed ghstack pull requst")
+        raise PullError(f"Malformed ghstack pull request {urls=}")
 
     end = next((i for i, s in enumerate(lines) if s.startswith(_GHSTACK_SOURCE)), -1)
     lines = lines[:end]
@@ -193,7 +193,8 @@ class PullRequests:
         for branch in _run("git branch -r"):
             pr = PullRequest(branch.strip())
             with suppress(PullError):
-                result.setdefault(pr.user, []).append(pr)
+                if pr.user == self.user:
+                    result.setdefault(pr.user, []).append(pr)
         return result
 
     def __call__(self) -> None:
@@ -213,7 +214,11 @@ class PullRequests:
         try:
             getattr(self, "_" + self.args.command, self._url_command)()
         except PullError as e:
-            arg = getattr(self.args, "pull", None) or getattr(self.args, "search", None)
+            arg = " ".join(
+                getattr(self.args, "pull", None)
+                or getattr(self.args, "search", None)
+                or ()
+            )
             msg = e.args[0]
             if arg and not arg in msg:
                 msg = f"{msg} for {arg}"
@@ -362,7 +367,7 @@ class PullRequests:
 
     @cached_property
     def user(self) -> str:
-        if self.args.user:
+        if user := getattr(self.args, "user", None):
             return self.args.user
         if len(self.remotes) != 1:
             return self.remotes["origin"]
@@ -640,7 +645,7 @@ def main():
     try:
         PullRequests()()
     except PullError as e:
-        if DEBUG:
+        if DEBUG or VERBOSE:
             raise
         error(e.args[0])
 
