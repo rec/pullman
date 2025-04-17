@@ -477,14 +477,14 @@ def parse(argv):
             p.add_argument("--time", "-t", default=0, type=int, help=help)
 
         elif name == "checkout":
-            help = "Also rebase against a given git ref"
-            p.add_argument("--rebase-against", "-R", type=str, default="", help=help)
-
             help = "Also rebase against upstream/main"
             p.add_argument("--rebase-main", "-m", action="store_true", help=help)
 
             help = "Also rebase against upstream/viable/strict"
             p.add_argument("--rebase-strict", "-r", action="store_true", help=help)
+
+            help = "Also rebase against a given git ref"
+            p.add_argument("--rebase-against", "-R", type=str, default="", help=help)
 
         else:
             help = "The github user name"
