@@ -24,7 +24,7 @@ from github takes one to two seconds per pull request the first time.
     #149959: [inductor] Add more typing to _inductor/ir.py
     #150767: [inductor] Clean typing in codegen/common.py and codecache.py
 
-    $ git log -1 --oneline $(pm ref slightly)
+    $ git log -1 --oneline $(pullman ref slightly)
     c2f0f86cff2 (upstream/gh/rec/124/orig) [inductor] Simplify _inductor/utils.py slightly
 
     $ pullman url -o functional  # Also opens #145636 in the browser
