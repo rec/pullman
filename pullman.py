@@ -28,6 +28,8 @@ except ImportError:
     requests = None
 
 HELP = "HELP GOES HERE"
+DEFAULT_FORMAT = "{user} #{pull_number} ({commit_id}): {subject}"
+COMMIT_ID_LENGTH = 10
 
 _COMMANDS = {
     "checkout": "Call `ghstack checkout` on this pull request",
@@ -201,6 +203,10 @@ class PullRequests:
         global VERBOSE
         VERBOSE = self.args.verbose
 
+        if self.args.update:
+            self.args.fetch = self.args.rewrite_cache = True
+
+
         if self.args.fetch:
             _run("git fetch upstream")
 
@@ -267,16 +273,18 @@ class PullRequests:
             key = attrgetter("subject" if self.args.sort else "pull_number")
             return sorted(pulls, key=key, reverse=self.args.reverse)
 
-        if MULTIUSERS_ENABLED and self.args.all:
-            for user in self.pulls:
-                for p in user_pulls:
-                    print(f"{user}: #{p.pull_number}: {p.subject}")
+        if user_pulls := clean_and_sort(self.user):
+            fmt = self.args.format.format
+            for p in user_pulls:
+                msg = fmt(
+                    pull_number=p.pull_number,
+                    subject=p.subject,
+                    commit_id=p.commit_id[:COMMIT_ID_LENGTH],
+                    user="",
+                )
+                print(msg.strip())
         else:
-            if user_pulls := clean_and_sort(self.user):
-                for p in user_pulls:
-                    print(f"#{p.pull_number}: {p.subject}")
-            else:
-                error(f"No pulls found for user='{self.user}'")
+            error(f"No pulls found for user='{self.user}'")
 
     def _get_pull(self, pull_number: str) -> PullRequest:
         user_pulls = self.pulls.values()
@@ -442,11 +450,14 @@ def parse(argv):
         help = "Ignore pullman's cache"
         p.add_argument("--ignore-cache", "-i", action="store_true")
 
-        help = "Print each command before it's executed"
-        p.add_argument("--verbose", "-v", action="store_true")
-
         help = "Rewrite cache"
         p.add_argument("--rewrite-cache", "-w", action="store_true")
+
+        help = "Perform git fetch and rewrite cache"
+        p.add_argument("--update", "-u", action="store_true")
+
+        help = "Print each command before it's executed"
+        p.add_argument("--verbose", "-v", action="store_true")
 
         if name == "errors":
             help = "Show tests with each env variable combination that fails"
@@ -488,7 +499,7 @@ def parse(argv):
 
         else:
             help = "The github user name"
-            p.add_argument("--user", "-u", default="", type=str, help=help)
+            p.add_argument("--user", default="", type=str, help=help)
 
         if name == "list":
             help = "A string to match in git subjects"
@@ -500,6 +511,11 @@ def parse(argv):
 
             help = "Also show closed pull requests"
             p.add_argument("--closed", "-c", action="store_true", help=help)
+
+            help = "Format to display list"
+            p.add_argument(
+                "--format", "-m", type=str, default=DEFAULT_FORMAT, help=help
+            )
 
             help = "Reverse order of pull requests"
             p.add_argument("--reverse", "-r", action="store_true", help=help)
