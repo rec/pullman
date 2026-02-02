@@ -27,46 +27,46 @@ try:
 except ImportError:
     requests = None
 
-HELP = "HELP GOES HERE"
-DEFAULT_FORMAT = "{user} #{pull_number} ({commit_id}): {subject}"
+HELP = 'HELP GOES HERE'
+DEFAULT_FORMAT = '{user} #{pull_number} ({commit_id}): {subject}'
 COMMIT_ID_LENGTH = 10
 
 _COMMANDS = {
-    "checkout": "Call `ghstack checkout` on this pull request",
-    "commit_url": "Show gitub URL for the commit for this pull request",
-    "errors": "Download all the errors for a pull request",
-    "hud_url": "HUD URL for a pull request",
-    "list": "List all pull requests (the default)",
-    "ref": "Show git ref id of a pull request",
-    "ref_url": "Show git ref id URL for a pull request",
-    "url": "Show the URL for a pull request",
+    'checkout': 'Call `ghstack checkout` on this pull request',
+    'commit_url': 'Show gitub URL for the commit for this pull request',
+    'errors': 'Download all the errors for a pull request',
+    'hud_url': 'HUD URL for a pull request',
+    'list': 'List all pull requests (the default)',
+    'ref': 'Show git ref id of a pull request',
+    'ref_url': 'Show git ref id URL for a pull request',
+    'url': 'Show the URL for a pull request',
 }
 
-UPDATE_SUBMODULES = "git submodule update --init --recursive"
+UPDATE_SUBMODULES = 'git submodule update --init --recursive'
 CONFLICT_MSG = f"""After resolving any conflicts, type:
 
     git rebase --continue
     {UPDATE_SUBMODULES}"
 """
 
-DEFAULT_CACHE_PATH = Path("~/.cache/pullman/pullman.json").expanduser()
-DEFAULT_OUT = "unit-test-failures.sh"
+DEFAULT_CACHE_PATH = Path('~/.cache/pullman/pullman.json').expanduser()
+DEFAULT_OUT = 'unit-test-failures.sh'
 
-TOKEN_NAMES = "PULL_MANAGER_GIT_TOKEN", "GIT_TOKEN"
+TOKEN_NAMES = 'PULL_MANAGER_GIT_TOKEN', 'GIT_TOKEN'
 GIT_TOKEN = next((token for n in TOKEN_NAMES if (token := os.environ.get(n))), None)
 
-API_ROOT = "https://api.github.com/repos/pytorch/pytorch"
+API_ROOT = 'https://api.github.com/repos/pytorch/pytorch'
 
-_PULL_PREFIX = "https://github.com/pytorch/pytorch/pull/"
-_GHSTACK_SOURCE = "ghstack-source-id:"
-_HUD_PREFIX = "https://hud.pytorch.org/pr/"
-_PULL_REQUEST_RESOLVED = "Pull Request resolved:"
-_REF_PREFIX = "https://github.com/pytorch/pytorch/tree/"
-_COMMIT_PREFIX = "https://github.com/pytorch/pytorch/commit/"
+_PULL_PREFIX = 'https://github.com/pytorch/pytorch/pull/'
+_GHSTACK_SOURCE = 'ghstack-source-id:'
+_HUD_PREFIX = 'https://hud.pytorch.org/pr/'
+_PULL_REQUEST_RESOLVED = 'Pull Request resolved:'
+_REF_PREFIX = 'https://github.com/pytorch/pytorch/tree/'
+_COMMIT_PREFIX = 'https://github.com/pytorch/pytorch/commit/'
 
 MULTIUSERS_ENABLED = False
 
-FIELDS_TO_SERIALIZE = "is_open", "pull_message", "pull_number", "ref"
+FIELDS_TO_SERIALIZE = 'is_open', 'pull_message', 'pull_number', 'ref'
 DEBUG = True
 VERBOSE = False
 
@@ -101,51 +101,51 @@ class PullRequest:
 
     @cached_property
     def is_open(self) -> bool:
-        url = f"{_curl_command()}/{self.pull_number}"
+        url = f'{_curl_command()}/{self.pull_number}'
         info = _run_json(url)
-        if info.get("status") == "404":
-            raise ValueError(f"{url=}\n{json.dumps(info, indent=2)}")
-        return info["state"] == "open"
+        if info.get('status') == '404':
+            raise ValueError(f'{url=}\n{json.dumps(info, indent=2)}')
+        return info['state'] == 'open'
 
     @cached_property
     def commit_id(self) -> str:
-        return _run(f"git show-ref -s {self.ref}")[0].strip()
+        return _run(f'git show-ref -s {self.ref}')[0].strip()
 
     @cached_property
     def url(self) -> str:
-        return f"{_PULL_PREFIX}{self.pull_number}"
+        return f'{_PULL_PREFIX}{self.pull_number}'
 
     @cached_property
     def commit_url(self) -> str:
-        return f"{_COMMIT_PREFIX}{self.commit_id}"
+        return f'{_COMMIT_PREFIX}{self.commit_id}'
 
     @cached_property
     def hud_url(self) -> str:
-        return f"{_HUD_PREFIX}{self.pull_number}"
+        return f'{_HUD_PREFIX}{self.pull_number}'
 
     @cached_property
     def ref_url(self) -> str:
-        upstream, _, ref = self.ref.partition("/")
-        return f"{_REF_PREFIX}{ref}"
+        upstream, _, ref = self.ref.partition('/')
+        return f'{_REF_PREFIX}{ref}'
 
     def asdict(self) -> dict[str, Any]:
         fv = ((f, self.__dict__.get(f)) for f in FIELDS_TO_SERIALIZE)
         return {f: v for f, v in fv if v is not None}
 
     @classmethod
-    def fromdict(cls, ref: str, **kwargs: Any) -> "PullRequest":
+    def fromdict(cls, ref: str, **kwargs: Any) -> 'PullRequest':
         pr = cls(ref)
         pr.__dict__.update(kwargs)
         return pr
 
     @cached_property
     def _user_index(self) -> tuple[str, int]:
-        parts = self.ref.split("/")
+        parts = self.ref.split('/')
         if len(parts) == 5:
             remote, gh, user, index, branch = parts
-            if branch != "orig":
-                raise PullError("Waiting for orig branch")
-            if remote == "upstream" and gh == "gh" and index.isnumeric():
+            if branch != 'orig':
+                raise PullError('Waiting for orig branch')
+            if remote == 'upstream' and gh == 'gh' and index.isnumeric():
                 return user, int(index)
 
         raise PullError(f"Do not understand git reference '{self.ref}'")
@@ -153,15 +153,15 @@ class PullRequest:
 
 @cache
 def _get_ghstack_message(ref: str) -> tuple[str, list[str]]:
-    lines = _run(f"git log --pretty=medium -1 {ref}", print_error=False)
-    lines = [i[4:] for i in lines if i[:4] == "    "]
+    lines = _run(f'git log --pretty=medium -1 {ref}', print_error=False)
+    lines = [i[4:] for i in lines if i[:4] == '    ']
     assert lines
 
     urls = [u for s in lines if (u := s.partition(_PULL_REQUEST_RESOLVED)[2].strip())]
     if not urls:
-        raise PullError("not a ghstack pull request")
+        raise PullError('not a ghstack pull request')
     if len(urls) > 1:
-        raise PullError(f"Malformed ghstack pull request {urls=}")
+        raise PullError(f'Malformed ghstack pull request {urls=}')
 
     end = next((i for i, s in enumerate(lines) if s.startswith(_GHSTACK_SOURCE)), -1)
     lines = lines[:end]
@@ -184,7 +184,7 @@ class PullRequests:
             }
 
     def save(self) -> None:
-        if (pulls := self.__dict__.get("pulls")) is not None:
+        if (pulls := self.__dict__.get('pulls')) is not None:
             d = {k: [i.asdict() for i in v] for k, v in pulls.items()}
             self.path.parent.mkdir(parents=True, exist_ok=True)
             self.path.write_text(json.dumps(d, indent=2))
@@ -192,7 +192,7 @@ class PullRequests:
     @cached_property
     def pulls(self) -> dict[str, list[PullRequest]]:
         result: dict[str, list[PullRequest]] = {}
-        for branch in _run("git branch -r"):
+        for branch in _run('git branch -r'):
             pr = PullRequest(branch.strip())
             with suppress(PullError):
                 if pr.user == self.user:
@@ -206,9 +206,8 @@ class PullRequests:
         if self.args.update:
             self.args.fetch = self.args.rewrite_cache = True
 
-
         if self.args.fetch:
-            _run("git fetch upstream")
+            _run('git fetch upstream')
 
         if not (self.args.ignore_cache or self.args.rewrite_cache):
             self.load()
@@ -218,35 +217,35 @@ class PullRequests:
         if self.user not in self.pulls:
             error("No pull requests found for user '{self.user}")
         try:
-            getattr(self, "_" + self.args.command, self._url_command)()
+            getattr(self, '_' + self.args.command, self._url_command)()
         except PullError as e:
-            arg = " ".join(
-                getattr(self.args, "pull", None)
-                or getattr(self.args, "search", None)
+            arg = ' '.join(
+                getattr(self.args, 'pull', None)
+                or getattr(self.args, 'search', None)
                 or ()
             )
             msg = e.args[0]
             if arg and not arg in msg:
-                msg = f"{msg} for {arg}"
+                msg = f'{msg} for {arg}'
             error(msg)
 
         if not self.args.ignore_cache:
             self.save()
 
     def _checkout(self):
-        flags = "rebase_against", "rebase_main", "rebase_strict"
+        flags = 'rebase_against', 'rebase_main', 'rebase_strict'
         if sum(bool(getattr(self.args, f)) for f in flags) > 1:
-            set_flags = ", ".join("--" + f for f in flags)
-            error(f"At most one of {set_flags} can be set")
+            set_flags = ', '.join('--' + f for f in flags)
+            error(f'At most one of {set_flags} can be set')
 
-        _run(f"ghstack checkout {self._matching_pull().url}")
+        _run(f'ghstack checkout {self._matching_pull().url}')
         if rebase := (
             self.args.rebase_against
             or (self.args.rebase_main and 'upstream/main')
             or (self.args.rebase_strict and 'upstream/viable/strict')
         ):
             try:
-                _run("git rebase upstream/viable/strict")
+                _run('git rebase upstream/viable/strict')
             except CalledProcessError:
                 error(CONFLICT_MSG)
             _run(UPDATE_SUBMODULES)
@@ -254,12 +253,12 @@ class PullRequests:
     def _url_command(self):
         value = getattr(self._matching_pull(), self.args.command)
         print(value)
-        if self.args.command.endswith("url") and self.args.open:
+        if self.args.command.endswith('url') and self.args.open:
             webbrowser.open(value)
 
     def _list(self):
-        search = " ".join(self.args.search)
-        if search.startswith(":/"):
+        search = ' '.join(self.args.search)
+        if search.startswith(':/'):
             search = search[2:]
 
         def clean_and_sort(user: str) -> list[PullRequest]:
@@ -270,7 +269,7 @@ class PullRequests:
                     if search in p.subject and (self.args.closed or p.is_open):
                         pulls.append(p)
 
-            key = attrgetter("subject" if self.args.sort else "pull_number")
+            key = attrgetter('subject' if self.args.sort else 'pull_number')
             return sorted(pulls, key=key, reverse=self.args.reverse)
 
         if user_pulls := clean_and_sort(self.user):
@@ -280,7 +279,7 @@ class PullRequests:
                     pull_number=p.pull_number,
                     subject=p.subject,
                     commit_id=p.commit_id[:COMMIT_ID_LENGTH],
-                    user="",
+                    user='',
                 )
                 print(msg.strip())
         else:
@@ -293,7 +292,7 @@ class PullRequests:
         try:
             return pull_requests_by_number[pull_number]
         except KeyError:
-            msg = "No such pull request (rerun with -fw if you know it exists)"
+            msg = 'No such pull request (rerun with -fw if you know it exists)'
             raise PullError(msg) from None
 
     def _matching_pull(self) -> PullRequest:
@@ -302,10 +301,10 @@ class PullRequests:
                 return pl[-1]
             raise PullError(f"Can't find any commits matching '{self.pull}'")
 
-        if self.pull.startswith("#"):
+        if self.pull.startswith('#'):
             return self._get_pull(self.pull[1:])
 
-        if self.pull.startswith(":/"):
+        if self.pull.startswith(':/'):
             return search(self.pull[2:])
 
         with suppress(CalledProcessError):
@@ -318,30 +317,30 @@ class PullRequests:
         return search(self.pull)
 
     def _errors(self) -> None:
-        if bad := ["bs4"] * (bs4 is None) + ["requests"] * (requests is None):
-            cmd = f"{sys.executable} -m pip install {' '.join(bad)}"
-            msg = f"To use `pullman errors`, install {', '.join(bad)} with\n\n    {cmd}"
+        if bad := ['bs4'] * (bs4 is None) + ['requests'] * (requests is None):
+            cmd = f'{sys.executable} -m pip install {" ".join(bad)}'
+            msg = f'To use `pullman errors`, install {", ".join(bad)} with\n\n    {cmd}'
             raise PullError(msg)
 
         pull = self._matching_pull()
         if self.args.output_to_terminal:
             context, file = nullcontext(), sys.stdout
-            print(f"Reading {pull.url}", file=sys.stderr)
+            print(f'Reading {pull.url}', file=sys.stderr)
         else:
-            context = file = open(self.args.output, "w")
-            msg = f"Writing {self.args.output} for {pull.url}"
+            context = file = open(self.args.output, 'w')
+            msg = f'Writing {self.args.output} for {pull.url}'
             print(msg, file=sys.stderr)
 
         with context:
             if not self.args.output_to_terminal:
-                print(f"#!/bin/bash\n\n# Failed tests for {pull.url}\n", file=file)
+                print(f'#!/bin/bash\n\n# Failed tests for {pull.url}\n', file=file)
                 if self.args.before:
-                    print(f"{self.args.before}\n", file=file)
+                    print(f'{self.args.before}\n', file=file)
 
                 if self.args.python or (self.args.python_default and sys.executable):
                     if not os.path.isdir(self.args.python):
                         python = os.path.dirname(self.args.python)
-                    print(f"export PATH={self.args.python}:$PATH\n", file=file)
+                    print(f'export PATH={self.args.python}:$PATH\n', file=file)
             run_error_command(pull.pull_number, self.args, file)
 
         if not self.args.output_to_terminal:
@@ -350,7 +349,7 @@ class PullRequests:
 
     @cached_property
     def pull(self) -> str:
-        return " ".join(self.args.pull) or 'HEAD'
+        return ' '.join(self.args.pull) or 'HEAD'
 
     @cached_property
     def args(self):
@@ -360,37 +359,37 @@ class PullRequests:
     def remotes(self):
         """Will add an upstream remote if it doesn't exist!"""
         remotes = {}
-        for s in _run("git remote -v"):
+        for s in _run('git remote -v'):
             remote, url, _ = s.split()
-            user = url.partition(":")[2].partition("/")[0]
+            user = url.partition(':')[2].partition('/')[0]
             remotes[remote] = user
 
-        if "upstream" not in remotes:
-            remote = "git@github.com:pytorch/pytorch.git"
-            _run(f"git remote add upstream {remote}")
+        if 'upstream' not in remotes:
+            remote = 'git@github.com:pytorch/pytorch.git'
+            _run(f'git remote add upstream {remote}')
             print("Adding a new remote, 'upstream'", file=sys.stdout)
-            remotes["upstream"] = remote
+            remotes['upstream'] = remote
 
         return remotes
 
     @cached_property
     def user(self) -> str:
-        if user := getattr(self.args, "user", None):
+        if user := getattr(self.args, 'user', None):
             return self.args.user
         if len(self.remotes) != 1:
-            return self.remotes["origin"]
+            return self.remotes['origin']
         for r in self.remotes.values():
             return r
 
 
 def _run_raw(cmd: str, print_error: bool = True):
     if VERBOSE:
-        print("$", cmd, file=sys.stderr)
+        print('$', cmd, file=sys.stderr)
     try:
         return run(cmd, capture_output=True, text=True, check=True, shell=True).stdout
     except CalledProcessError as e:
         if print_error and e.stderr:
-            print(f"Error on command `{cmd}`:\n", e.stderr, file=sys.stderr)
+            print(f'Error on command `{cmd}`:\n', e.stderr, file=sys.stderr)
         raise
 
 
@@ -405,10 +404,9 @@ def _run_json(cmd: str):
 @cache
 def _curl_command() -> str:
     headers = (
-        '-H "Accept: application/vnd.github+json" '
-        '-H "X-GitHub-Api-Version: 2022-11-28"'
+        '-H "Accept: application/vnd.github+json" -H "X-GitHub-Api-Version: 2022-11-28"'
     )
-    url = f"{API_ROOT}/pulls"
+    url = f'{API_ROOT}/pulls'
     if GIT_TOKEN:
         auth = f'-H "Authorization: Bearer {GIT_TOKEN}"'
     else:
@@ -416,15 +414,16 @@ def _curl_command() -> str:
         print(
             f'WARNING: one of environment variable {TOKEN_NAMES} '
             'must be not set or github will rate-limit you sooner',
-            file=sys.stderr
+            file=sys.stderr,
         )
-    return f"curl {headers} {auth} {url}"
+    return f'curl {headers} {auth} {url}'
 
 
 class ArgumentParser(argparse.ArgumentParser):
     """
     Adds better help formatting to argparse.ArgumentParser
     """
+
     _epilog: str = HELP
 
     def exit(self, status: int = 0, message: Optional[str] = None):
@@ -433,133 +432,133 @@ class ArgumentParser(argparse.ArgumentParser):
         line breaks when printing the `epilog` section of the help message.
         """
         argv = sys.argv[1:]
-        if self._epilog and not status and "-h" in argv or "--help" in argv:
+        if self._epilog and not status and '-h' in argv or '--help' in argv:
             print(self._epilog)
         super().exit(status, message)
 
 
 def parse(argv):
     parser = ArgumentParser()
-    add_parser = parser.add_subparsers(help="Commands:", dest="command").add_parser
+    add_parser = parser.add_subparsers(help='Commands:', dest='command').add_parser
     parsers = Namespace(**{k: add_parser(k, help=v) for k, v in _COMMANDS.items()})
 
     for name, p in vars(parsers).items():
-        help = "Perform git fetch"
-        p.add_argument("--fetch", "-f", action="store_true")
+        help = 'Perform git fetch'
+        p.add_argument('--fetch', '-f', action='store_true')
 
         help = "Ignore pullman's cache"
-        p.add_argument("--ignore-cache", "-i", action="store_true")
+        p.add_argument('--ignore-cache', '-i', action='store_true')
 
-        help = "Rewrite cache"
-        p.add_argument("--rewrite-cache", "-w", action="store_true")
+        help = 'Rewrite cache'
+        p.add_argument('--rewrite-cache', '-w', action='store_true')
 
-        help = "Perform git fetch and rewrite cache"
-        p.add_argument("--update", "-u", action="store_true")
+        help = 'Perform git fetch and rewrite cache'
+        p.add_argument('--update', '-u', action='store_true')
 
         help = "Print each command before it's executed"
-        p.add_argument("--verbose", "-v", action="store_true")
+        p.add_argument('--verbose', '-v', action='store_true')
 
-        if name == "errors":
-            help = "Show tests with each env variable combination that fails"
-            p.add_argument("--all-env-combos", "-a", action="store_true", help=help)
+        if name == 'errors':
+            help = 'Show tests with each env variable combination that fails'
+            p.add_argument('--all-env-combos', '-a', action='store_true', help=help)
 
-            help = "Code to insert before the test commands"
-            p.add_argument("--before", "-b", default="", type=str, help=help)
+            help = 'Code to insert before the test commands'
+            p.add_argument('--before', '-b', default='', type=str, help=help)
 
-            help = "Select a conda environment before running"
-            p.add_argument("--conda", "-c", default="", type=str, help=help)
+            help = 'Select a conda environment before running'
+            p.add_argument('--conda', '-c', default='', type=str, help=help)
 
-            help = "Write to an output file"
-            p.add_argument("--output", "-o", default=DEFAULT_OUT, type=str, help=help)
+            help = 'Write to an output file'
+            p.add_argument('--output', '-o', default=DEFAULT_OUT, type=str, help=help)
 
-            help = "Write to the terminal"
-            p.add_argument("--output-to-terminal", "-O", action="store_true", help=help)
+            help = 'Write to the terminal'
+            p.add_argument('--output-to-terminal', '-O', action='store_true', help=help)
 
-            help = "Add Python or bin directory to the PATH"
-            p.add_argument("--python", "-p", default="", type=str, help=help)
+            help = 'Add Python or bin directory to the PATH'
+            p.add_argument('--python', '-p', default='', type=str, help=help)
 
-            help = "Add path to current Python to the PATH"
-            p.add_argument("--python-default", "-P", action="store_true", help=help)
+            help = 'Add path to current Python to the PATH'
+            p.add_argument('--python-default', '-P', action='store_true', help=help)
 
-            help = "Sort errors alphabetically"
-            p.add_argument("--sort", "-s", action="store_true", help=help)
+            help = 'Sort errors alphabetically'
+            p.add_argument('--sort', '-s', action='store_true', help=help)
 
-            help = "Seconds to wait, 0 means none"
-            p.add_argument("--time", "-t", default=0, type=int, help=help)
+            help = 'Seconds to wait, 0 means none'
+            p.add_argument('--time', '-t', default=0, type=int, help=help)
 
-        elif name == "checkout":
-            help = "Also rebase against upstream/main"
-            p.add_argument("--rebase-main", "-m", action="store_true", help=help)
+        elif name == 'checkout':
+            help = 'Also rebase against upstream/main'
+            p.add_argument('--rebase-main', '-m', action='store_true', help=help)
 
-            help = "Also rebase against upstream/viable/strict"
-            p.add_argument("--rebase-strict", "-r", action="store_true", help=help)
+            help = 'Also rebase against upstream/viable/strict'
+            p.add_argument('--rebase-strict', '-r', action='store_true', help=help)
 
-            help = "Also rebase against a given git ref"
-            p.add_argument("--rebase-against", "-R", type=str, default="", help=help)
+            help = 'Also rebase against a given git ref'
+            p.add_argument('--rebase-against', '-R', type=str, default='', help=help)
 
         else:
-            help = "The github user name"
-            p.add_argument("--user", default="", type=str, help=help)
+            help = 'The github user name'
+            p.add_argument('--user', default='', type=str, help=help)
 
-        if name == "list":
-            help = "A string to match in git subjects"
-            p.add_argument("search", nargs="*", default="", help=help)
+        if name == 'list':
+            help = 'A string to match in git subjects'
+            p.add_argument('search', nargs='*', default='', help=help)
 
             if MULTIUSERS_ENABLED:
-                help = "List all users"
-                p.add_argument("--all", "-a", action="store_true")
+                help = 'List all users'
+                p.add_argument('--all', '-a', action='store_true')
 
-            help = "Also show closed pull requests"
-            p.add_argument("--closed", "-c", action="store_true", help=help)
+            help = 'Also show closed pull requests'
+            p.add_argument('--closed', '-c', action='store_true', help=help)
 
-            help = "Format to display list"
+            help = 'Format to display list'
             p.add_argument(
-                "--format", "-m", type=str, default=DEFAULT_FORMAT, help=help
+                '--format', '-m', type=str, default=DEFAULT_FORMAT, help=help
             )
 
-            help = "Reverse order of pull requests"
-            p.add_argument("--reverse", "-r", action="store_true", help=help)
+            help = 'Reverse order of pull requests'
+            p.add_argument('--reverse', '-r', action='store_true', help=help)
 
-            help = "Sort alphabetically"
-            p.add_argument("--sort", "-s", action="store_true", help=help)
+            help = 'Sort alphabetically'
+            p.add_argument('--sort', '-s', action='store_true', help=help)
 
         else:
             help = (
-                "An optional commit, PR index, pull request number (can start with #),"
-                " or search term (can start with :/)"
+                'An optional commit, PR index, pull request number (can start with #),'
+                ' or search term (can start with :/)'
             )
-            p.add_argument("pull", nargs="*", default="", help=help)
+            p.add_argument('pull', nargs='*', default='', help=help)
 
-            if name.endswith("url"):
-                help = "Open the URL in the browser"
-                p.add_argument("--open", "-o", action="store_true", help=help)
+            if name.endswith('url'):
+                help = 'Open the URL in the browser'
+                p.add_argument('--open', '-o', action='store_true', help=help)
 
     argv = sys.argv[1:]
-    if "-h" not in argv and "--help" not in argv:
-        if not argv or argv[0].startswith("-"):
-            argv = "list", *argv
+    if '-h' not in argv and '--help' not in argv:
+        if not argv or argv[0].startswith('-'):
+            argv = 'list', *argv
         elif matches := [c for c in _COMMANDS if c.startswith(argv[0])]:
             argv[0] = min((len(m), m) for m in matches)[1]
         else:
-            argv = "list", *argv
+            argv = 'list', *argv
     return parser.parse_args(argv)
 
 
 # from failed_test_commands.py
 
 HEADERS = {
-    "Accept": "application/vnd.github+json",
-    "Authorization": f"Bearer {GIT_TOKEN}",
-    "X-GitHub-Api-Version": "2022-11-28",
+    'Accept': 'application/vnd.github+json',
+    'Authorization': f'Bearer {GIT_TOKEN}',
+    'X-GitHub-Api-Version': '2022-11-28',
 }
 
-MATCH_PYTHON_COMMAND_RE = re.compile(r"([A-Z_]+=.*)|python")
+MATCH_PYTHON_COMMAND_RE = re.compile(r'([A-Z_]+=.*)|python')
 
-FAILURE = "failure"
-CONCLUSION = "conclusion"
-COMMAND = "To execute this test, run the following from the base repo dir"
+FAILURE = 'failure'
+CONCLUSION = 'conclusion'
+COMMAND = 'To execute this test, run the following from the base repo dir'
 SECONDS_TO_WAIT = 0
-HREF_PREFIX = "/pytorch/pytorch/actions/runs/"
+HREF_PREFIX = '/pytorch/pytorch/actions/runs/'
 
 
 def run_error_command(pull_id, args, file):
@@ -569,7 +568,7 @@ def run_error_command(pull_id, args, file):
     if not args.all_env_combos:
         d = {}
         for c, job_id in commands:
-            before, _, after = c.partition("python ")
+            before, _, after = c.partition('python ')
             if before and any(c_id := d.get(after, (None, None))):
                 cmd, id = c_id
                 if len(c) >= len(cmd):
@@ -583,19 +582,19 @@ def run_error_command(pull_id, args, file):
 
     for cmd, job_id in commands:
         if cmd != last_cmd:
-            print(f"{cmd}  # {job_id}", file=file)
+            print(f'{cmd}  # {job_id}', file=file)
             last_cmd = cmd
 
 
 def _get_run_ids(pull_id):
     assert pull_id.isnumeric()
-    text = requests.get(f"{_PULL_PREFIX}{pull_id}/checks").text
-    soup = bs4.BeautifulSoup(text, "html.parser")
-    links = (i for i in soup.find_all("a", href=True) if i.text)
+    text = requests.get(f'{_PULL_PREFIX}{pull_id}/checks').text
+    soup = bs4.BeautifulSoup(text, 'html.parser')
+    links = (i for i in soup.find_all('a', href=True) if i.text)
     for a in links:
-        prefix, _, href = a["href"].partition(HREF_PREFIX)
+        prefix, _, href = a['href'].partition(HREF_PREFIX)
         if not prefix and href.isnumeric():
-            for span in a.find_all("span"):
+            for span in a.find_all('span'):
                 span = span.text.strip()
                 if span in ('inductor', 'pull', 'trunk'):
                     yield span, href
@@ -605,56 +604,56 @@ def _get_run_ids(pull_id):
 def _failed_test_commands(run_ids, seconds):
     for segment, run_id in run_ids:
         for job in _get_failures(segment, run_id, seconds):
-            command = _get_command(job["id"])
+            command = _get_command(job['id'])
             if command:
-                yield command, job["id"]
+                yield command, job['id']
 
 
 def _get_failures(segment, run_id, seconds):
     while True:
-        print(f"Loading jobs for {run_id}, segment={segment}...", file=sys.stderr)
-        json = _api_get(f"actions/runs/{run_id}/jobs?per_page=100").json()
+        print(f'Loading jobs for {run_id}, segment={segment}...', file=sys.stderr)
+        json = _api_get(f'actions/runs/{run_id}/jobs?per_page=100').json()
         try:
-            jobs = json["jobs"]
+            jobs = json['jobs']
         except KeyError:
             print(json, file=sys.stderr)
-            error("Bad JSON")
+            error('Bad JSON')
 
-        not_finished = sum(not j["conclusion"] for j in jobs)
+        not_finished = sum(not j['conclusion'] for j in jobs)
         if not_finished:
-            msg = f"{not_finished} job{'s' * (not_finished != 1)} not finished"
+            msg = f'{not_finished} job{"s" * (not_finished != 1)} not finished'
             print(msg, file=sys.stderr)
 
         if not (seconds and not_finished):
             break
-        print("Waiting for", seconds, "seconds", file=sys.stderr)
+        print('Waiting for', seconds, 'seconds', file=sys.stderr)
         time.sleep(seconds)
 
     failed = [i for i in jobs if i[CONCLUSION] == FAILURE]
-    print(f"{run_id=}, {len(jobs)=}, {len(failed)=}", file=sys.stderr)
+    print(f'{run_id=}, {len(jobs)=}, {len(failed)=}', file=sys.stderr)
     return failed
 
 
 def _get_command(job_id):
-    lines = _api_get(f"actions/jobs/{job_id}/logs").text.splitlines()
+    lines = _api_get(f'actions/jobs/{job_id}/logs').text.splitlines()
     command_lines = (i for i, li in enumerate(lines) if COMMAND in li)
     cmd_index = next(command_lines, -1)
     if cmd_index == -1:
-        return ""
+        return ''
 
     words = lines[cmd_index + 1].split()
     while words and not MATCH_PYTHON_COMMAND_RE.match(words[0]):
         words.pop(0)
 
-    return " ".join(words)
+    return ' '.join(words)
 
 
 def _api_get(path):
-    return requests.get(f"{API_ROOT}/{path}", headers=HEADERS)
+    return requests.get(f'{API_ROOT}/{path}', headers=HEADERS)
 
 
 def error(s: str):
-    sys.exit(f"ERROR: {s}")
+    sys.exit(f'ERROR: {s}')
 
 
 def main():
