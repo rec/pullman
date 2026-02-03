@@ -6,17 +6,17 @@ import json
 import os
 import re
 import stat
-import subprocess
 import sys
+import time
 import webbrowser
 from argparse import Namespace
+from collections.abc import Sequence
 from contextlib import nullcontext, suppress
 from functools import cache, cached_property
 from operator import attrgetter
 from pathlib import Path
 from subprocess import CalledProcessError, run
-from typing import Any, Optional, Sequence
-
+from typing import Any, Optional
 
 try:
     import bs4
@@ -174,7 +174,7 @@ def _get_ghstack_message(ref: str) -> tuple[str, list[str]]:
 
 @dc.dataclass
 class PullRequests:
-    argv: Optional[Sequence[str]] = None
+    argv: Sequence[str] | None = None
     path: Path = DEFAULT_CACHE_PATH
 
     def load(self) -> None:
@@ -225,7 +225,7 @@ class PullRequests:
                 or ()
             )
             msg = e.args[0]
-            if arg and not arg in msg:
+            if arg and arg not in msg:
                 msg = f'{msg} for {arg}'
             error(msg)
 
@@ -239,7 +239,7 @@ class PullRequests:
             error(f'At most one of {set_flags} can be set')
 
         _run(f'ghstack checkout {self._matching_pull().url}')
-        if rebase := (
+        if (
             self.args.rebase_against
             or (self.args.rebase_main and 'upstream/main')
             or (self.args.rebase_strict and 'upstream/viable/strict')
@@ -265,7 +265,6 @@ class PullRequests:
             pulls = []
             for p in self.pulls.get(user, ()):
                 with suppress(PullError):
-                    p.pull_number
                     if search in p.subject and (self.args.closed or p.is_open):
                         pulls.append(p)
 
@@ -339,6 +338,7 @@ class PullRequests:
 
                 if self.args.python or (self.args.python_default and sys.executable):
                     if not os.path.isdir(self.args.python):
+                        # TODO!
                         python = os.path.dirname(self.args.python)
                     print(f'export PATH={self.args.python}:$PATH\n', file=file)
             run_error_command(pull.pull_number, self.args, file)
@@ -375,7 +375,7 @@ class PullRequests:
     @cached_property
     def user(self) -> str:
         if user := getattr(self.args, 'user', None):
-            return self.args.user
+            return user
         if len(self.remotes) != 1:
             return self.remotes['origin']
         for r in self.remotes.values():
@@ -426,7 +426,7 @@ class ArgumentParser(argparse.ArgumentParser):
 
     _epilog: str = HELP
 
-    def exit(self, status: int = 0, message: Optional[str] = None):
+    def exit(self, status: int = 0, message: str | None = None):
         """
         Overriding this method is a workaround for argparse throwing away all
         line breaks when printing the `epilog` section of the help message.
